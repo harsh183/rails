@@ -73,13 +73,13 @@ module ActiveSupport
     #   step "Setup", "bin/setup"
     #   step "Single test", "bin/rails", "test", "--name", "test_that_is_one"
     #   step "Flaky test", "bin/rails test test/models/flaky_test.rb", attempts: 3
-    def step(title, *command, attempts: 1)
+    def step(title, *command, attempts: 1, timeout: nil)
       raise ArgumentError, "attempts must be a positive integer" unless attempts.positive?
 
       heading title, command.join(" "), type: :title
 
       successful = retry_until_success(attempts) do
-        system(*command)
+        run_command(*command, timeout:)
       end
 
       report(title) { results << [ successful, title ] }
@@ -174,6 +174,24 @@ module ActiveSupport
           echo "Attempt #{attempt_number + 1} failed. Retrying...", type: :error
         end
         false
+      end
+
+      def run_command(*command, timeout: nil)
+        pid = Process.spawn(*command)
+        unless timeout
+          Process.wait(pid)
+          return $?.success?
+        end
+
+
+        Timeout.timeout(timeout) do
+          Process.wait(pid)
+          $?.success?
+        rescue Timeout::Error
+          puts "process not finished in #{timeout}s, killing it"
+          Process.kill("TERM", pid)
+          false
+        end
       end
   end
 end
